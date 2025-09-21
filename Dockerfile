@@ -2,22 +2,17 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# Copy only files needed to resolve deps first (better cache)
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw
-RUN ./mvnw -q -DskipTests dependency:go-offline
-
-# Now copy the rest and build
+# Copy EVERYTHING first so Maven can see all child modules
 COPY . .
-RUN ./mvnw -q -DskipTests clean package
+# Make wrapper executable
+RUN chmod +x mvnw
+# Build (only shop module + dependencies)
+RUN ./mvnw -q -DskipTests -pl sm-shop -am clean package
 
 # ---- run stage ----
 FROM eclipse-temurin:17-jre
 WORKDIR /app
-
-# Use wildcard because the WAR is versioned (e.g., sm-shop-3.x.x.war)
+# WAR name is versioned, so use wildcard
 COPY --from=build /app/sm-shop/target/*.war /app/sm-shop.war
-
 EXPOSE 8080
 ENTRYPOINT ["java","-Xms256m","-Xmx512m","-jar","/app/sm-shop.war"]
