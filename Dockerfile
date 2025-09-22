@@ -2,21 +2,23 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# Copy everything first so Maven sees all modules
+# Copy full repo so Maven sees all modules
 COPY . .
 
-# Make sure wrapper is executable and has LF line endings
-RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
+# Build shop module and all its deps
+RUN mvn -q -DskipTests -pl sm-shop -am clean package
 
-# Critical: neutralize the MAVEN_CONFIG set by the Maven image
-ENV MAVEN_CONFIG=
-
-# Build only the shop module and its deps
-RUN ./mvnw -q -DskipTests -pl sm-shop -am clean package
+# Sanity check: show what got produced (helps debug Render logs)
+RUN ls -la sm-shop/target
 
 # ---- run stage ----
 FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=build /app/sm-shop/target/*.war /app/sm-shop.war
+
+# Copy the entire target directory so we don't depend on exact filename
+COPY --from=build /app/sm-shop/target /app/target
+
 EXPOSE 8080
-ENTRYPOINT ["java","-Xms256m","-Xmx512m","-jar","/app/sm-shop.war"]
+
+# Pick WAR if present, else JAR
+ENTRYPOINT ["/bin/sh","-c","exec java -Xms256m -Xmx512m -jar \"$(ls /app/target/*.war 2>/dev/null || ls /app/target/*.jar 2>/dev/null)\""]
